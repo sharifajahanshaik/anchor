@@ -46,17 +46,25 @@ const getBuildTimestamp = (): string => {
 };
 
 const collectorUrl = process.env.OTEL_COLLECTOR_ENDPOINT || 'https://crane.beta.breeze.in';;
+
+const isTelemetryEnabled = (): boolean => {
+    return process.env.ENABLE_TELEMETRY !== 'false';
+};
 // Random utils - End
 
-console.log(
-    'Instrumentation.ts',
-    getAppEnvironment(),
-    getAppName(),
-    getAppVersion(),
-    getBuildTimestamp(),
-    collectorUrl
-);
-if (getAppEnvironment() === 'dev') {
+if (isTelemetryEnabled()) {
+    console.log(
+        'Instrumentation.ts',
+        getAppEnvironment(),
+        getAppName(),
+        getAppVersion(),
+        getBuildTimestamp(),
+        collectorUrl
+    );
+}
+
+// Only enable DEBUG logging if telemetry is enabled AND environment is dev
+if (isTelemetryEnabled() && getAppEnvironment() === 'dev') {
     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 }
 
@@ -149,20 +157,23 @@ const sdk = new NodeSDK({
         awsEc2Detector
     ]
 });
-logs.setGlobalLoggerProvider(loggerProvider);
+// Only start telemetry if enabled
+if (isTelemetryEnabled()) {
+    logs.setGlobalLoggerProvider(loggerProvider);
+    opentelemetry.metrics.setGlobalMeterProvider(meterProvider);
+    sdk.start();
 
-opentelemetry.metrics.setGlobalMeterProvider(meterProvider);
-
-sdk.start();
-
-// Ensure the SDK is shut down gracefully
-process.on('SIGTERM', () => {
-    sdk
-        .shutdown()
-        .then(() => console.log('OpenTelemetry SDK shut down'))
-        .catch((error) => console.error('Error shutting down OpenTelemetry SDK', error))
-        .finally(() => process.exit(0));
-});
+    // Ensure the SDK is shut down gracefully
+    process.on('SIGTERM', () => {
+        sdk
+            .shutdown()
+            .then(() => console.log('OpenTelemetry SDK shut down'))
+            .catch((error) => console.error('Error shutting down OpenTelemetry SDK', error))
+            .finally(() => process.exit(0));
+    });
+} else {
+    console.log('📊 OpenTelemetry disabled (ENABLE_TELEMETRY=false)');
+}
 
 export const getTracer = (identifier: string): Tracer => {
     return trace.getTracer(identifier);

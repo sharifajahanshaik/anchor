@@ -42,6 +42,10 @@ export type AbandonmentInfo = {
         utmCampaign: string | null;
         utmContent: string | null;
         utmSource: string | null;
+        breeze_checkout_url: string | null;
+        breeze_abandoned_checkout_url: string | null;
+        // Allow any additional custom attributes
+        [key: string]: string | null;
     } | null;
     retryCount: number;
 };

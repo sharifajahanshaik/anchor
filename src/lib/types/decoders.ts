@@ -80,7 +80,18 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
             utmMedium: typeof customAttributes.utmMedium === 'string' ? customAttributes.utmMedium : null,
             utmCampaign: typeof customAttributes.utmCampaign === 'string' ? customAttributes.utmCampaign : null,
             utmContent: typeof customAttributes.utmContent === 'string' ? customAttributes.utmContent : null,
-            utmSource: typeof customAttributes.utmSource === 'string' ? customAttributes.utmSource : null
+            utmSource: typeof customAttributes.utmSource === 'string' ? customAttributes.utmSource : null,
+            breeze_checkout_url: typeof customAttributes.breeze_checkout_url === 'string' ? customAttributes.breeze_checkout_url : null,
+            breeze_abandoned_checkout_url: typeof customAttributes.breeze_abandoned_checkout_url === 'string' ? customAttributes.breeze_abandoned_checkout_url : null,
+            // Pass through any additional custom attributes as-is
+            ...Object.entries(customAttributes).reduce((acc, [key, value]) => {
+                // Skip known fields that are already handled above
+                const knownFields = ['abandonedRecoveryUrl', 'cartToken', 'fbclid', 'utmMedium', 'utmCampaign', 'utmContent', 'utmSource', 'breeze_checkout_url', 'breeze_abandoned_checkout_url'];
+                if (!knownFields.includes(key) && typeof value === 'string') {
+                    acc[key] = value;
+                }
+                return acc;
+            }, {} as Record<string, string>)
         } : null,
         retryCount: 0
     };

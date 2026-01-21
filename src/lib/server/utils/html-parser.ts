@@ -1,7 +1,11 @@
 // src/utils/parseHTML.ts
 import { JSDOM, VirtualConsole } from 'jsdom';
-import { transformCheckoutInput } from './shopify';
+import { transformCheckoutInput, transformCheckoutInputPhoneOnly } from './shopify';
 import type { UserInfo, CheckoutInput, AbandonmentInfo } from '$lib/types';
+import fetch from 'node-fetch';
+
+// Default actions.js filename with fallback
+const DEFAULT_ACTIONS_JS_FILENAME = process.env.DEFAULT_ACTIONS_JS_FILENAME || 'actions.B_hz6_NC.js';
 
 /**
  * Converts raw merchandise data using your conversion logic.
@@ -56,9 +60,81 @@ function findQueueToken(obj: any): any {
 }
 
 /**
+ * Extracts the actions.js file URL from checkout HTML.
+ * This file has a dynamic hash (e.g., actions.B_hz6_NC.js) that changes over time.
+ */
+export function extractActionsJsUrl(doc: Document): string | null {
+    // Find all script tags with src attribute
+    const scriptTags = doc.querySelectorAll('script[src]');
+
+    for (const script of scriptTags) {
+        const src = script.getAttribute('src');
+        if (src && src.includes('/cdn/shopifycloud/checkout-web/assets/') && src.includes('/actions.')) {
+            return src;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Fetches the actions.js file and extracts the Proposal query ID
+ * Returns the ID from: { id: "867b72fb...", type: "query", name: "Proposal" }
+ */
+export async function fetchActionsJs(shopUrl: string, actionsJsPath: string, userAgent: string): Promise<string | null> {
+    try {
+        // Construct full URL if path is relative
+        const actionsJsUrl = actionsJsPath.startsWith('http')
+            ? actionsJsPath
+            : `${shopUrl}${actionsJsPath}`;
+
+        console.log(`[ACTIONS:FETCH] Fetching actions.js from: ${actionsJsUrl}`);
+
+        const response = await fetch(actionsJsUrl, {
+            headers: {
+                'User-Agent': userAgent,
+                'Referer': shopUrl,
+                'Origin': shopUrl,
+                'sec-ch-ua-platform': '"macOS"',
+                'sec-ch-ua': '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+                'sec-ch-ua-mobile': '?0'
+            }
+        });
+
+        if (!response.ok) {
+            console.log(`[ACTIONS:ERROR] Failed to fetch actions.js: ${response.status}`);
+            return null;
+        }
+
+        const jsContent = await response.text();
+
+        // Extract the Proposal query ID
+        // Looking for: id: "867b72fb...", type: "query", name: "Proposal"
+        const proposalMatch = jsContent.match(/id:\s*"([^"]+)"[^}]*type:\s*"query"[^}]*name:\s*"Proposal"/);
+
+        if (proposalMatch) {
+            const queryId = proposalMatch[1];
+            console.log(`[ACTIONS:SUCCESS] Extracted Proposal query ID: ${queryId}`);
+            return queryId;
+        } else {
+            console.log(`[ACTIONS:ERROR] Could not find Proposal query ID in actions.js`);
+            return null;
+        }
+    } catch (error) {
+        console.log(`[ACTIONS:EXCEPTION] Error fetching actions.js:`, error);
+        return null;
+    }
+}
+
+/**
  * Extracts data from the given HTML and returns transformed checkout input.
  */
-export async function extractDataFromHTML(htmlText: string, userInfo: UserInfo, customAttributes?: AbandonmentInfo['customAttributes']): Promise<any> {
+export async function extractDataFromHTML(
+    htmlText: string,
+    userInfo: UserInfo,
+    customAttributes?: AbandonmentInfo['customAttributes'],
+    isPhoneOnly: boolean = false
+): Promise<any> {
     try {
         const virtualConsole = new VirtualConsole();
         virtualConsole.sendTo(console, { omitJSDOMErrors: true });
@@ -66,6 +142,33 @@ export async function extractDataFromHTML(htmlText: string, userInfo: UserInfo, 
         const doc = dom.window.document;
         let cleanedMerchandise: any = null;
         let queueToken: any = null;
+        let sessionToken = "";
+        let buildId: string | null = null;
+
+        // Extract actions.js URL
+        let actionsJsUrl = extractActionsJsUrl(doc);
+
+        // Use default filename if not found
+        if (!actionsJsUrl) {
+            actionsJsUrl = `/cdn/shopifycloud/checkout-web/assets/c1/${DEFAULT_ACTIONS_JS_FILENAME}`;
+            console.log(`[ACTIONS:DEFAULT] Using default actions.js: ${actionsJsUrl}`);
+        }
+
+        // Extract build ID from serialized-environment meta tag
+        const serializedEnvironmentMeta = doc.querySelector('meta[name="serialized-environment"]');
+        if (serializedEnvironmentMeta) {
+            try {
+                const metaElem = serializedEnvironmentMeta as unknown as { content: string };
+                const envContent = JSON.parse(metaElem.content);
+                buildId = envContent.commitSha || null;
+                if (buildId) {
+                    console.log(`[BUILD_ID] Extracted build ID: ${buildId}`);
+                }
+            } catch (error) {
+                console.log(`[BUILD_ID] Error parsing serialized-environment:`, error);
+            }
+        }
+
         const serializedGraphqlMeta = doc.querySelector('meta[name="serialized-graphql"]');
         if (serializedGraphqlMeta) {
             const metaElem = serializedGraphqlMeta as unknown as { content: string };
@@ -91,20 +194,46 @@ export async function extractDataFromHTML(htmlText: string, userInfo: UserInfo, 
                 return null
             }
         }
+
         const serializedSessionToken = doc.querySelector('meta[name="serialized-session-token"]');
         const typedSerializedSessionToken = serializedSessionToken as unknown as { content: string };
-        const sessionToken = typedSerializedSessionToken ? typedSerializedSessionToken.content.replace(/[\"]/g, "") : "";
+
+        if (typedSerializedSessionToken && typedSerializedSessionToken.content) {
+            sessionToken = typedSerializedSessionToken.content.replace(/[\"]/g, "");
+        } else {
+            sessionToken = "";
+        }
+
         if (!typedSerializedSessionToken) {
             return null
         }
+
+        // Print all extracted values
+        // console.log("=== EXTRACTED VALUES FROM CHECKOUT HTML ===");
+        // console.log("Session Token:", sessionToken);
+        // console.log("Queue Token:", queueToken);
+        // console.log("Actions.js URL:", actionsJsUrl);
+        // console.log("Build ID:", buildId || "NOT FOUND");
+        // console.log("Merchandise Lines:", JSON.stringify(cleanedMerchandise?.merchandise?.merchandiseLines, null, 2));
+        // console.log("===========================================");
+
         const checkoutInput: CheckoutInput = {
             queueToken,
             sessionToken,
             merchandise: cleanedMerchandise
         }
-        return transformCheckoutInput(
-            checkoutInput, userInfo, customAttributes
-        );
+
+        // Use phone-only transform if isPhoneOnly flag is set
+        const transformedInput = isPhoneOnly
+            ? transformCheckoutInputPhoneOnly(checkoutInput, userInfo, customAttributes)
+            : transformCheckoutInput(checkoutInput, userInfo, customAttributes);
+
+        // Return transformed input, actions.js URL, and build ID
+        return {
+            payloadVariableObject: transformedInput,
+            actionsJsUrl,
+            buildId
+        };
     } catch (error) {
         console.error("Error parsing HTML or extracting data:", error);
         return null;
