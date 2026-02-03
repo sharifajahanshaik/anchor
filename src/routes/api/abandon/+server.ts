@@ -1,7 +1,7 @@
 import type { AbandonmentRequest } from '$lib/types';
 import type { RequestHandler } from '@sveltejs/kit';
-import { processAbandonments } from '$lib/server/utils/abandon';
-import { decodeAbandonmentRequest } from '$lib/types/decoders';
+import { processAbandonments } from '$lib/server/abandonment/abandonment.service';
+import { decodeAbandonmentRequest } from '$lib/server/validation';
 
 export const POST: RequestHandler = async ({ request }) => {
     try {

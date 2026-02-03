@@ -26,37 +26,32 @@ export { SeverityNumber } from '@opentelemetry/api-logs';
 import { LoggerProvider, BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import type { AnyValueMap, Logger } from '@opentelemetry/api-logs';
+import { getConfig } from '../config';
 
-// Random utils. To be moved to a common seperate file
-// Not using common utils to avoid adding extra dependencies in this file
-const getAppEnvironment = () => {
-    return process.env.PUBLIC_APP_ENVIRONMENT || 'release';
-};
+// Get configuration
+const config = getConfig();
 
-const getAppVersion = (): string => {
-    return process.env.PUBLIC_APP_VERSION ?? '1.0.0';
-};
+// Extract telemetry config for easy access
+const getAppEnvironment = () => config.telemetry.environment;
+const getAppVersion = () => config.telemetry.appVersion;
+const getAppName = () => config.telemetry.appName;
+const getBuildTimestamp = () => config.telemetry.buildTimestamp;
+const collectorUrl = config.telemetry.collectorEndpoint;
+const isTelemetryEnabled = () => config.telemetry.enabled;
 
-const getAppName = (): string => {
-    return process.env.PUBLIC_APP_NAME ?? 'abandonment';
-};
+// Log initialization - use console.log to avoid circular dependency with logger service
+if (isTelemetryEnabled()) {
+    console.log('[telemetry] OpenTelemetry instrumentation initialized', {
+        environment: getAppEnvironment(),
+        appName: getAppName(),
+        appVersion: getAppVersion(),
+        buildTimestamp: getBuildTimestamp(),
+        collectorUrl
+    });
+}
 
-const getBuildTimestamp = (): string => {
-    return process.env.PUBLIC_BUILD_TIMESTAMP ?? '';
-};
-
-const collectorUrl = process.env.OTEL_COLLECTOR_ENDPOINT || 'https://crane.beta.breeze.in';;
-// Random utils - End
-
-console.log(
-    'Instrumentation.ts',
-    getAppEnvironment(),
-    getAppName(),
-    getAppVersion(),
-    getBuildTimestamp(),
-    collectorUrl
-);
-if (getAppEnvironment() === 'dev') {
+// Only enable DEBUG logging if telemetry is enabled AND environment is dev
+if (isTelemetryEnabled() && getAppEnvironment() === 'dev') {
     diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 }
 
@@ -149,20 +144,23 @@ const sdk = new NodeSDK({
         awsEc2Detector
     ]
 });
-logs.setGlobalLoggerProvider(loggerProvider);
+// Only start telemetry if enabled
+if (isTelemetryEnabled()) {
+    logs.setGlobalLoggerProvider(loggerProvider);
+    opentelemetry.metrics.setGlobalMeterProvider(meterProvider);
+    sdk.start();
 
-opentelemetry.metrics.setGlobalMeterProvider(meterProvider);
-
-sdk.start();
-
-// Ensure the SDK is shut down gracefully
-process.on('SIGTERM', () => {
-    sdk
-        .shutdown()
-        .then(() => console.log('OpenTelemetry SDK shut down'))
-        .catch((error) => console.error('Error shutting down OpenTelemetry SDK', error))
-        .finally(() => process.exit(0));
-});
+    // Ensure the SDK is shut down gracefully
+    process.on('SIGTERM', () => {
+        sdk
+            .shutdown()
+            .then(() => console.log('[telemetry] OpenTelemetry SDK shut down successfully'))
+            .catch((error) => console.error('[telemetry] Error shutting down OpenTelemetry SDK', error))
+            .finally(() => process.exit(0));
+    });
+} else {
+    console.log('[telemetry] OpenTelemetry disabled', { reason: 'ENABLE_TELEMETRY=false' });
+}
 
 export const getTracer = (identifier: string): Tracer => {
     return trace.getTracer(identifier);

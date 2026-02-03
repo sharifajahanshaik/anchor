@@ -1,4 +1,4 @@
-import type { AbandonmentInfo, AbandonmentRequest } from ".";
+import type { AbandonmentInfo, AbandonmentRequest } from "$lib/types";
 
 export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
     if (
@@ -47,10 +47,11 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
     const state =
         typeof userInfo.state === 'string' ? userInfo.state : null;
 
-    // Required fields validation
-    if (
-        typeof userInfo.phone !== 'string'
-    ) {
+    // Required fields validation - at least phone OR email must be present
+    const hasPhone = typeof userInfo.phone === 'string';
+    const hasEmail = typeof email === 'string' && email.length > 0;
+
+    if (!hasPhone && !hasEmail) {
         return null;
     }
 
@@ -64,7 +65,7 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
         userInfo: {
             firstName,
             lastName,
-            phone: userInfo.phone,
+            phone: hasPhone ? userInfo.phone : '',
             countryCode,
             address,
             city,
@@ -80,7 +81,18 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
             utmMedium: typeof customAttributes.utmMedium === 'string' ? customAttributes.utmMedium : null,
             utmCampaign: typeof customAttributes.utmCampaign === 'string' ? customAttributes.utmCampaign : null,
             utmContent: typeof customAttributes.utmContent === 'string' ? customAttributes.utmContent : null,
-            utmSource: typeof customAttributes.utmSource === 'string' ? customAttributes.utmSource : null
+            utmSource: typeof customAttributes.utmSource === 'string' ? customAttributes.utmSource : null,
+            breeze_checkout_url: typeof customAttributes.breeze_checkout_url === 'string' ? customAttributes.breeze_checkout_url : null,
+            breeze_abandoned_checkout_url: typeof customAttributes.breeze_abandoned_checkout_url === 'string' ? customAttributes.breeze_abandoned_checkout_url : null,
+            // Pass through any additional custom attributes as-is
+            ...Object.entries(customAttributes).reduce((acc, [key, value]) => {
+                // Skip known fields that are already handled above
+                const knownFields = ['abandonedRecoveryUrl', 'cartToken', 'fbclid', 'utmMedium', 'utmCampaign', 'utmContent', 'utmSource', 'breeze_checkout_url', 'breeze_abandoned_checkout_url'];
+                if (!knownFields.includes(key) && typeof value === 'string') {
+                    acc[key] = value;
+                }
+                return acc;
+            }, {} as Record<string, string>)
         } : null,
         retryCount: 0
     };

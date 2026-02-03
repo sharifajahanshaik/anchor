@@ -1,32 +1,48 @@
-# Abandonment Cart Recovery
+# Anchor - Checkout Automation Service
 
-This project is designed to recover abandoned carts by automatically creating checkouts on Shopify. It uses a queue system to process abandonments, a Tor proxy for anonymity, and interacts with the Shopify API.
+A robust e-commerce automation service that streamlines checkout processing for online stores. Built with SvelteKit and designed for reliability, scalability, and privacy.
 
-## Functionality
+## Overview
 
-The core logic for processing abandonments resides in `src/lib/server/utils/abandon.ts`. It uses a queue system (`abandonmentQueue` and `retryQueue`) to manage abandonments and retries. The `processAbandonments` function adds abandonments to the queue, and the `processAbandonmentQueue` function processes them in batches. Tor identities are renewed periodically for anonymity. The `makeRequest` function creates a checkout URL on Shopify, extracts data from the HTML response, and then makes a merchandise proposal request to Shopify.
+Anchor automates the checkout creation process, helping businesses reduce cart abandonment and improve conversion rates. The service provides a RESTful API that accepts checkout requests and processes them efficiently through a queue-based system.
 
 ## API Endpoint
 
-The project exposes a POST endpoint at `/api/abandon`. This endpoint accepts a JSON payload with an array of abandonments, as defined by the `AbandonmentRequest` type.
+The service exposes a RESTful API endpoint for processing checkout requests:
+
+**Endpoint:** `POST /api/abandon`
+
+**Request Format:**
 
 ```typescript
-type AbandonmentRequest = {
-	abandonments: AbandonmentInfo[];
-};
+{
+	abandonments: AbandonmentInfo[]
+}
 ```
 
-Each `AbandonmentInfo` object should contain the following:
+**AbandonmentInfo Schema:**
 
 ```typescript
-type AbandonmentInfo = {
-	shopUrl: string;
+{
+	shopUrl: string;                    // Store URL
 	items: {
-		variantId: string;
-		quantity: string;
+		variantId: string;              // Product variant ID
+		quantity: string;               // Item quantity
 	}[];
-	userInfo: UserInfo;
+	userInfo: {
+		firstName: string | null;
+		lastName: string | null;
+		phone: string;                  // Required
+		countryCode: string | null;
+		address: string | null;
+		city: string | null;
+		postalCode: string | null;
+		zoneCode: string | null;       // Auto-derived from state if not provided
+		email: string | null;
+		state: string | null;
+	};
 	customAttributes?: {
+		// Standard tracking attributes
 		abandonedRecoveryUrl: string | null;
 		cartToken: string | null;
 		fbclid: string | null;
@@ -34,59 +50,114 @@ type AbandonmentInfo = {
 		utmCampaign: string | null;
 		utmContent: string | null;
 		utmSource: string | null;
+		breeze_checkout_url: string | null;
+		breeze_abandoned_checkout_url: string | null;
+		// Any additional custom key-value pairs
+		[key: string]: string | null;
 	} | null;
-	retryCount: number;
-};
-```
-
-The `UserInfo` object should contain the following:
-
-```typescript
-interface UserInfo {
-	firstName: string | null;
-	lastName: string | null;
-	phone: string;
-	countryCode: string | null;
-	address: string | null;
-	city: string | null;
-	postalCode: string | null;
-	zoneCode: string | null;
-	email: string | null;
-	state: string | null;
 }
-
-Note: The `zoneCode` field can be automatically derived from the `state` field if not provided explicitly. See the State to ZoneCode mapping in the API.md file for details.
 ```
 
-## Features
+## Key Features
 
-- **Queue System**: Processes abandonments in batches and manages retries.
-- **Tor Integration**: Uses Tor for anonymity, rotating identities periodically.
-- **Error Handling**: Sends Slack notifications for errors with masked sensitive data.
-- **Custom Attributes Support**: Includes custom attributes like recovery URLs, cart tokens, and UTM parameters in checkout notes and custom attributes.
-- **Data Masking**: Masks sensitive information like phone numbers, emails, and addresses in logs and notifications.
-- **State to ZoneCode Mapping**: Automatically maps state names to their corresponding zone codes if not provided explicitly.
+- **Scalable Queue System**: Efficient batch processing with automatic retry logic
+- **Privacy-First Architecture**: Built-in anonymization and data protection
+- **Comprehensive Error Handling**: Real-time monitoring with sanitized notifications
+- **Flexible Custom Attributes**: Support for tracking parameters and custom metadata
+- **Data Security**: Automatic masking of sensitive information in logs
+- **Smart Data Handling**: Auto-completion of regional information (e.g., zone code derivation)
+- **Type-Safe API**: Full TypeScript support with runtime validation
 
-## Dependencies
+## Technology Stack
 
-Key dependencies include:
+- **Framework**: SvelteKit
+- **Runtime**: Node.js
+- **Language**: TypeScript
+- **Key Libraries**:
+  - Network handling and session management
+  - HTML parsing and data extraction
+  - Queue-based processing system
+  - Cookie and state management
 
-- `tor-control-ts`: For interacting with Tor.
-- `node-fetch`: For making HTTP requests.
-- `fetch-cookie`: For managing cookies with `node-fetch`.
-- `tough-cookie`: For robust cookie handling.
-- `socks-proxy-agent`: For using Tor as a proxy.
-- `random-useragent`: For generating random user agents.
-- `jsdom`: For parsing HTML content.
+## Getting Started
 
-## Setup
+### Prerequisites
 
-1. **Install Tor:** Ensure Tor is installed and running on your system.
-2. **Configure Tor Control Port:** The Tor control port is configured in `src/lib/server/utils/tor.ts`. Ensure the password matches your Tor configuration.
-3. **Install Dependencies:** Run `npm install` to install project dependencies.
-4. **Build:** Run `npm run build` to build the project.
-5. **Run:** Run `npm run dev` to start the development server.
+- Node.js 18+
+- npm or yarn
 
-## API Spec
+### Installation
 
-See API.md for details.
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd anchor
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment**
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and configure the required environment variables.
+
+4. **Build the project**
+   ```bash
+   npm run build
+   ```
+
+5. **Start the service**
+   ```bash
+   # Development mode
+   npm run dev
+
+   # Production mode
+   npm start
+   ```
+
+The API will be available at `http://localhost:3000` (or your configured port).
+
+## Documentation
+
+- **API Specification**: See [API.md](API.md) for detailed API documentation
+- **Type Definitions**: Located in `src/lib/types/`
+- **Request Validation**: Built-in decoder functions ensure data integrity
+
+## Usage Example
+
+```bash
+curl -X POST http://localhost:3000/api/abandon \
+  -H "Content-Type: application/json" \
+  -d '{
+    "abandonments": [
+      {
+        "shopUrl": "https://example.com",
+        "items": [
+          {
+            "variantId": "12345",
+            "quantity": "1"
+          }
+        ],
+        "userInfo": {
+          "phone": "1234567890",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "john@example.com",
+          "countryCode": "US"
+        },
+        "customAttributes": {
+          "utmSource": "google",
+          "utmMedium": "cpc"
+        }
+      }
+    ]
+  }'
+```
+
+## License
+
+Proprietary - All Rights Reserved
