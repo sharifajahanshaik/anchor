@@ -3,9 +3,11 @@ import { CookieJar } from 'tough-cookie';
 import fetchCookie from 'fetch-cookie';
 import fetch from 'node-fetch';
 import randomUseragent from 'random-useragent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import type { UserInfo, CheckoutInput, AbandonmentInfo, CartItem } from '$lib/types';
-import { sendSlackAbandonedCheckoutAlert } from '$lib/server/utils';
+import type { UserInfo, AbandonmentInfo, CartItem } from '$lib/types';
+import type { CheckoutInput } from '../types';
+import { getLogger } from '../../logger';
+
+const logger = getLogger('shopify');
 
 export function transformCheckoutInputPhoneOnly(
     input: CheckoutInput,
@@ -106,7 +108,7 @@ export function transformCheckoutInputPhoneOnly(
                         customPaymentMethod: null,
                         offsitePaymentMethod: {
                             name: "RZP ",
-                            paymentMethodIdentifier: process.env.PAYMENT_METHOD_IDENTIFIER || "788affd63c99309bc6fcfec87ac49129",
+                            paymentMethodIdentifier: '788affd63c99309bc6fcfec87ac49129', // Hardcoded for archived code
                             billingAddress: {
                                 streetAddress: {
                                     address1: "",
@@ -459,7 +461,6 @@ export async function makeMerchandiseProposalRequest(
     variables: any,
     proposalQueryId: string,
     buildId: string | null = null,
-    torProxy: string | null = null,
     items?: CartItem[],
     userInfo?: UserInfo,
     checkoutUrl?: string,
@@ -478,18 +479,18 @@ export async function makeMerchandiseProposalRequest(
     // Log cookie jar status
     if (cookieJar) {
         const cookies = await cookieJar.getCookies(shopUrl);
-        console.log(`[COOKIE:REUSE] Reusing cookie jar with ${cookies.length} cookie(s)`);
-        if (cookies.length > 0) {
-            console.log(`[COOKIE:REUSE:NAMES] ${cookies.map((c: any) => c.key).join(', ')}`);
-        }
+        logger.debug('Reusing cookie jar', {
+            cookieCount: cookies.length,
+            cookieNames: cookies.length > 0 ? cookies.map((c: any) => c.key).join(', ') : undefined
+        });
     } else {
-        console.log(`[COOKIE:NEW] No cookie jar provided, creating new one (cookies will be lost!)`);
+        logger.warn('No cookie jar provided, creating new one (cookies will be lost!)');
     }
 
     // Extract checkout source ID from checkout URL dynamically
     // Format: https://domain.com/checkouts/cn/CHECKOUT_ID/en-in
-    let checkoutSourceId = process.env.CHECKOUT_SOURCE_ID || 'hWN7RSCPlrSvAz7GAb0tQX2X';
-    let checkoutType = process.env.CHECKOUT_TYPE || 'cn';
+    let checkoutSourceId = 'hWN7RSCPlrSvAz7GAb0tQX2X'; // Hardcoded for archived code
+    let checkoutType = 'cn'; // Hardcoded for archived code
 
     if (checkoutUrl) {
         try {
@@ -497,10 +498,12 @@ export async function makeMerchandiseProposalRequest(
             if (urlMatch) {
                 checkoutType = urlMatch[1]; // Extract type (cn or cs)
                 checkoutSourceId = urlMatch[2]; // Extract checkout ID
-                console.log(`[CHECKOUT:ID:DYNAMIC] Extracted from URL: type=${checkoutType}, id=${checkoutSourceId}`);
+                logger.debug('Extracted checkout ID from URL', { checkoutType, checkoutSourceId });
             }
         } catch (error) {
-            console.log(`[CHECKOUT:ID:ERROR] Failed to extract from URL, using default`);
+            logger.warn('Failed to extract checkout ID from URL, using default', {
+                error: error instanceof Error ? error.message : String(error)
+            });
         }
     }
 
@@ -539,9 +542,6 @@ export async function makeMerchandiseProposalRequest(
         'x-checkout-web-source-id': checkoutSourceId
     };
 
-
-    const agent = torProxy ? new SocksProxyAgent(torProxy) : undefined;
-
     const requestBody = {
         variables,
         operationName: "Proposal",
@@ -558,8 +558,7 @@ export async function makeMerchandiseProposalRequest(
     const options = {
         method: 'POST',
         headers,
-        body: JSON.stringify(requestBody),
-        agent,
+        body: JSON.stringify(requestBody)
     };
 
 
@@ -603,7 +602,9 @@ export async function makeMerchandiseProposalRequest(
 
         return responseData;
     } catch (error) {
-        console.error("Error during proposal request:", error);
+        logger.error('Error during proposal request', error instanceof Error ? error : new Error(String(error)), {
+            shopUrl
+        });
         // Send alert to Slack instead of throwing an error
         await sendSlackAbandonedCheckoutAlert({
             shopUrl,
@@ -621,4 +622,27 @@ export async function makeMerchandiseProposalRequest(
         // Return empty response to prevent further processing
         return { data: null };
     }
+}
+
+/**
+ * @deprecated Stub exports for archived code compatibility
+ */
+export function getCartClient(): any {
+	return null;
+}
+
+export function getCollectClient(): any {
+	return null;
+}
+
+export function getProposalClient(): any {
+	return null;
+}
+
+export function getActionsJsClient(): any {
+	return null;
+}
+
+export function sendSlackAbandonedCheckoutAlert(_params: any): Promise<void> {
+	return Promise.resolve();
 }

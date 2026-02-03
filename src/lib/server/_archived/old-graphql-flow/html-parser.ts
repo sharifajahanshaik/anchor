@@ -1,11 +1,15 @@
 // src/utils/parseHTML.ts
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { transformCheckoutInput, transformCheckoutInputPhoneOnly } from './shopify';
-import type { UserInfo, CheckoutInput, AbandonmentInfo } from '$lib/types';
+import type { UserInfo, AbandonmentInfo } from '$lib/types';
+import type { CheckoutInput } from '../types';
 import fetch from 'node-fetch';
+import { getLogger } from '../../logger';
 
-// Default actions.js filename with fallback
-const DEFAULT_ACTIONS_JS_FILENAME = process.env.DEFAULT_ACTIONS_JS_FILENAME || 'actions.B_hz6_NC.js';
+const logger = getLogger('html-parser');
+
+// Default actions.js filename (hardcoded for archived code)
+const DEFAULT_ACTIONS_JS_FILENAME = 'actions.B_hz6_NC.js';
 
 /**
  * Converts raw merchandise data using your conversion logic.
@@ -88,7 +92,7 @@ export async function fetchActionsJs(shopUrl: string, actionsJsPath: string, use
             ? actionsJsPath
             : `${shopUrl}${actionsJsPath}`;
 
-        console.log(`[ACTIONS:FETCH] Fetching actions.js from: ${actionsJsUrl}`);
+        logger.info('Fetching actions.js', { url: actionsJsUrl });
 
         const response = await fetch(actionsJsUrl, {
             headers: {
@@ -102,7 +106,10 @@ export async function fetchActionsJs(shopUrl: string, actionsJsPath: string, use
         });
 
         if (!response.ok) {
-            console.log(`[ACTIONS:ERROR] Failed to fetch actions.js: ${response.status}`);
+            logger.error('Failed to fetch actions.js', undefined, {
+                status: response.status,
+                url: actionsJsUrl
+            });
             return null;
         }
 
@@ -114,14 +121,16 @@ export async function fetchActionsJs(shopUrl: string, actionsJsPath: string, use
 
         if (proposalMatch) {
             const queryId = proposalMatch[1];
-            console.log(`[ACTIONS:SUCCESS] Extracted Proposal query ID: ${queryId}`);
+            logger.info('Extracted Proposal query ID', { queryId });
             return queryId;
         } else {
-            console.log(`[ACTIONS:ERROR] Could not find Proposal query ID in actions.js`);
+            logger.error('Could not find Proposal query ID in actions.js', undefined, { url: actionsJsUrl });
             return null;
         }
     } catch (error) {
-        console.log(`[ACTIONS:EXCEPTION] Error fetching actions.js:`, error);
+        logger.error('Error fetching actions.js', error instanceof Error ? error : new Error(String(error)), {
+            url: actionsJsPath
+        });
         return null;
     }
 }
@@ -151,7 +160,7 @@ export async function extractDataFromHTML(
         // Use default filename if not found
         if (!actionsJsUrl) {
             actionsJsUrl = `/cdn/shopifycloud/checkout-web/assets/c1/${DEFAULT_ACTIONS_JS_FILENAME}`;
-            console.log(`[ACTIONS:DEFAULT] Using default actions.js: ${actionsJsUrl}`);
+            logger.debug('Using default actions.js', { url: actionsJsUrl });
         }
 
         // Extract build ID from serialized-environment meta tag
@@ -162,10 +171,12 @@ export async function extractDataFromHTML(
                 const envContent = JSON.parse(metaElem.content);
                 buildId = envContent.commitSha || null;
                 if (buildId) {
-                    console.log(`[BUILD_ID] Extracted build ID: ${buildId}`);
+                    logger.debug('Extracted build ID', { buildId });
                 }
             } catch (error) {
-                console.log(`[BUILD_ID] Error parsing serialized-environment:`, error);
+                logger.warn('Error parsing serialized-environment', {
+                    error: error instanceof Error ? error.message : String(error)
+                });
             }
         }
 
@@ -235,7 +246,7 @@ export async function extractDataFromHTML(
             buildId
         };
     } catch (error) {
-        console.error("Error parsing HTML or extracting data:", error);
+        logger.error('Error parsing HTML or extracting data', error instanceof Error ? error : new Error(String(error)));
         return null;
     }
 }

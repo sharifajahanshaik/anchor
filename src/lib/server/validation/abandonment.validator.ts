@@ -1,4 +1,4 @@
-import type { AbandonmentInfo, AbandonmentRequest } from ".";
+import type { AbandonmentInfo, AbandonmentRequest } from "$lib/types";
 
 export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
     if (
@@ -47,10 +47,11 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
     const state =
         typeof userInfo.state === 'string' ? userInfo.state : null;
 
-    // Required fields validation
-    if (
-        typeof userInfo.phone !== 'string'
-    ) {
+    // Required fields validation - at least phone OR email must be present
+    const hasPhone = typeof userInfo.phone === 'string';
+    const hasEmail = typeof email === 'string' && email.length > 0;
+
+    if (!hasPhone && !hasEmail) {
         return null;
     }
 
@@ -64,7 +65,7 @@ export function decodeAbandonmentInfo(rawInput: any): AbandonmentInfo | null {
         userInfo: {
             firstName,
             lastName,
-            phone: userInfo.phone,
+            phone: hasPhone ? userInfo.phone : '',
             countryCode,
             address,
             city,
